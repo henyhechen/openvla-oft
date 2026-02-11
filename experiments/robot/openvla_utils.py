@@ -279,14 +279,24 @@ def get_vla(cfg: Any) -> torch.nn.Module:
         check_model_logic_mismatch(cfg.pretrained_checkpoint)
 
     # Load the model
-    vla = AutoModelForVision2Seq.from_pretrained(
+    # vla = AutoModelForVision2Seq.from_pretrained(
+    #     cfg.pretrained_checkpoint,
+    #     # attn_implementation="flash_attention_2",
+    #     torch_dtype=torch.bfloat16,
+    #     load_in_8bit=cfg.load_in_8bit,
+    #     load_in_4bit=cfg.load_in_4bit,
+    #     low_cpu_mem_usage=True,
+    #     trust_remote_code=True,
+    # )
+
+    vla = OpenVLAForActionPrediction.from_pretrained(
         cfg.pretrained_checkpoint,
-        # attn_implementation="flash_attention_2",
+        # attn_implementation=cfg.attn_implementation,
         torch_dtype=torch.bfloat16,
         load_in_8bit=cfg.load_in_8bit,
         load_in_4bit=cfg.load_in_4bit,
         low_cpu_mem_usage=True,
-        trust_remote_code=True,
+        trust_remote_code=False,
     )
 
     # If using FiLM, wrap the vision backbone to allow for infusion of language inputs
@@ -780,10 +790,10 @@ def get_vla_action(
         # Generate action
         if action_head is None:
             # Standard VLA output (single-image inputs, discrete actions)
-            action, _ = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
+            action, hidden_states = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
         else:
             # Custom action head for continuous actions
-            action, _ = vla.predict_action(
+            action, hidden_states = vla.predict_action(
                 **inputs,
                 unnorm_key=cfg.unnorm_key,
                 do_sample=False,
@@ -795,7 +805,7 @@ def get_vla_action(
             )
 
     # Return action chunk as list of actions
-    return [action[i] for i in range(len(action))]
+    return [action[i] for i in range(len(action))], hidden_states
 
 
 def get_action_from_server(

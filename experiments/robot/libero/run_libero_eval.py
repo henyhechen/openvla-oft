@@ -126,6 +126,7 @@ class GenerateConfig:
     wandb_project: str = "your-wandb-project"        # Name of WandB project
 
     seed: int = 7                                    # Random Seed (for reproducibility)
+    attn_implementation: str = "flash_attention_2"
 
     # fmt: on
 
