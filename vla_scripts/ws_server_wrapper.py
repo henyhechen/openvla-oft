@@ -1,34 +1,40 @@
-import numpy as np
-import torch
 import asyncio
 import http
-import time
 import logging
+import time
 import traceback
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
+
+import numpy as np
+import tensorflow as tf
+import torch
+import vla_scripts.msgpack_numpy as msgpack_numpy
 import websockets.asyncio.server as _server
 import websockets.frames
-import tensorflow as tf
-
-from typing import Any, Dict, Optional, Union, Tuple
-from dataclasses import dataclass
-from pathlib import Path
-
-from experiments.robot.openvla_utils import get_vla, get_processor, get_proprio_projector, get_action_head, get_noisy_action_projector
-from experiments.robot.robot_utils import get_action, get_model, normalize_gripper_action, invert_gripper_action
-
-import vla_scripts.msgpack_numpy as msgpack_numpy
+from experiments.robot.openvla_utils import (
+    get_action_head,
+    get_noisy_action_projector,
+    get_processor,
+    get_proprio_projector,
+)
+from experiments.robot.robot_utils import get_action, get_model
 
 logger = logging.getLogger(__name__)
 
+
 class OpenVLAWrapper:
-    def __init__(self, cfg, attn_implementation: Optional[str] = "flash_attention_2") -> Path:
+    def __init__(
+        self, cfg, attn_implementation: Optional[str] = "flash_attention_2"
+    ):
         self.cfg, self.attn_implementation = cfg, attn_implementation
-        self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
         self.processor = get_processor(self.cfg)
         self.model = get_model(self.cfg)
 
-    def resize_image_for_policy(self, img: np.ndarray, resize_size: Union[int, Tuple[int, int]]) -> np.ndarray:
+    def resize_image_for_policy(
+        self, img: np.ndarray, resize_size: Union[int, Tuple[int, int]]
+    ) -> np.ndarray:
         """
         Resize an image to match the policy's expected input size.
 
@@ -47,33 +53,31 @@ class OpenVLAWrapper:
 
         # Resize using the same pipeline as in RLDS dataset builder
         img = tf.image.encode_jpeg(img)  # Encode as JPEG
-        img = tf.io.decode_image(img, expand_animations=False, dtype=tf.uint8)  # Decode back
-        img = tf.image.resize(img, resize_size, method="lanczos3", antialias=True)
+        img = tf.io.decode_image(
+            img, expand_animations=False, dtype=tf.uint8
+        )  # Decode back
+        img = tf.image.resize(
+            img, resize_size, method="lanczos3", antialias=True
+        )
         img = tf.cast(tf.clip_by_value(tf.round(img), 0, 255), tf.uint8)
 
         return img.numpy()
-    
-    def get_libero_image(self, obs):
-        """Extracts third-person image from observations and preprocesses it."""
-        img = obs["agentview_image"]
-        img = img[::-1, ::-1]  # IMPORTANT: rotate 180 degrees to match train preprocessing
-        return img
 
     def get_libero_wrist_image(self, obs):
         """Extracts wrist camera image from observations and preprocesses it."""
-        img = obs["robot0_eye_in_hand_image"]
-        img = img[::-1, ::-1]  # IMPORTANT: rotate 180 degrees to match train preprocessing
+        img = obs["observation/wrist_image"]
+        img = img[
+            ::-1, ::-1
+        ]  # IMPORTANT: rotate 180 degrees to match train preprocessing
         return img
-    
+
     def load_model_components(self):
         proprio_projector = None
         action_head = None
 
         if self.cfg.use_proprio:
             proprio_projector = get_proprio_projector(
-                self.cfg,
-                self.model.llm_dim,
-                proprio_dim=8
+                self.cfg, self.model.llm_dim, proprio_dim=8
             )
 
         if self.cfg.use_l1_regression or self.cfg.use_diffusion:
@@ -82,17 +86,24 @@ class OpenVLAWrapper:
         # Load noisy action projector if using diffusion
         noisy_action_projector = None
         if self.cfg.use_diffusion:
-            noisy_action_projector = get_noisy_action_projector(self.cfg, self.model.llm_dim)
+            noisy_action_projector = get_noisy_action_projector(
+                self.cfg, self.model.llm_dim
+            )
 
         # check the cfg key
         unnorm_key = self.cfg.task_suite_name
 
         # In some cases, the key must be manually modified (e.g. after training on a modified version of the dataset
         # with the suffix "_no_noops" in the dataset name)
-        if unnorm_key not in self.model.norm_stats and f"{unnorm_key}_no_noops" in self.model.norm_stats:
+        if (
+            unnorm_key not in self.model.norm_stats
+            and f"{unnorm_key}_no_noops" in self.model.norm_stats
+        ):
             unnorm_key = f"{unnorm_key}_no_noops"
 
-        assert unnorm_key in self.model.norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
+        assert (
+            unnorm_key in self.model.norm_stats
+        ), f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
 
         # Set the unnorm_key in cfg
         self.cfg.unnorm_key = unnorm_key
@@ -100,21 +111,20 @@ class OpenVLAWrapper:
         return action_head, proprio_projector, noisy_action_projector
 
     def predict_action(self, payload: Dict[str, Any]):
-        action_head, proprio_projector, noisy_action_projector = self.load_model_components()
+        action_head, proprio_projector, noisy_action_projector = (
+            self.load_model_components()
+        )
 
-        instruction = payload["instruction"]
-        observations = payload["observations"]
-
-        full_img = self.get_libero_image(observations)
-        wrist_img = self.get_libero_wrist_image(observations)
-
-        img_resized = self.resize_image_for_policy(full_img, self.cfg.resize_size)
-        wrist_img_resized = self.resize_image_for_policy(wrist_img, self.cfg.resize_size)
-    
+        instruction = payload["prompt"]
         observation = {
-            "full_image": img_resized,
-            "wrist_image": wrist_img_resized,
-            "state": payload["state"]
+            "full_image": self.resize_image_for_policy(
+                payload["observation/image"][::-1, ::-1], self.cfg.resize_size
+            ),
+            "wrist_image": self.resize_image_for_policy(
+                payload["observation/wrist_image"][::-1, ::-1],
+                self.cfg.resize_size,
+            ),
+            "state": payload["observation/state"],
         }
 
         actions, hidden_states = get_action(
@@ -126,25 +136,25 @@ class OpenVLAWrapper:
             action_head=action_head,
             proprio_projector=proprio_projector,
             noisy_action_projector=noisy_action_projector,
-            use_film=self.cfg.use_film
+            use_film=self.cfg.use_film,
+        )  # hidden_states has shape (1, chunk_len, 4096)
+
+        hidden_states = (
+            hidden_states.detach().to(dtype=torch.float16).cpu().numpy()
         )
 
-        print(hidden_states)
-        print(hidden_states.shape) 
-
-        payload = {
-            "actions": actions
+        return {
+            "actions": actions,
+            "pre_logits": np.mean(hidden_states, axis=(0, 1)),
         }
 
-        return payload
 
 class WebSocketOpenVLAServer:
-    def __init__(self,
-                 vla_wrapper,
-                 host: str = "0.0.0.0",
-                 port: int = 8000) -> None:
+    def __init__(
+        self, vla_wrapper, host: str = "0.0.0.0", port: int = 8000
+    ) -> None:
         self._vla = vla_wrapper
-        
+
         self._host = host
         self._port = port
 
@@ -152,7 +162,7 @@ class WebSocketOpenVLAServer:
 
     def serve_forever(self) -> None:
         asyncio.run(self.run())
-    
+
     async def run(self):
         async with _server.serve(
             self._handler,
@@ -168,17 +178,15 @@ class WebSocketOpenVLAServer:
         logger.info(f"Connection from {websocket.remote_address} opened")
         packer = msgpack_numpy.Packer()
 
-        metadata = {
-            "hello": "world"
-        }
+        metadata = {"hello": "world"}
 
         await websocket.send(packer.pack(metadata))
-        
+
         prev_total_time = None
         while True:
             try:
                 start_time = time.monotonic()
-                
+
                 # obs must be:
                 # {
                 #   instruction: str
@@ -199,13 +207,17 @@ class WebSocketOpenVLAServer:
                 }
                 if prev_total_time is not None:
                     # We can only record the last total time since we also want to include the send time.
-                    action_payload["server_timing"]["prev_total_ms"] = prev_total_time * 1000
+                    action_payload["server_timing"]["prev_total_ms"] = (
+                        prev_total_time * 1000
+                    )
 
                 await websocket.send(packer.pack(action_payload))
                 prev_total_time = time.monotonic() - start_time
 
             except websockets.ConnectionClosed:
-                logger.info(f"Connection from {websocket.remote_address} closed")
+                logger.info(
+                    f"Connection from {websocket.remote_address} closed"
+                )
                 break
             except Exception:
                 await websocket.send(traceback.format_exc())
@@ -215,7 +227,10 @@ class WebSocketOpenVLAServer:
                 )
                 raise
 
-def _health_check(connection: _server.ServerConnection, request: _server.Request) -> _server.Response | None:
+
+def _health_check(
+    connection: _server.ServerConnection, request: _server.Request
+) -> _server.Response | None:
     if request.path == "/healthz":
         return connection.respond(http.HTTPStatus.OK, "OK\n")
     # Continue with the normal request handling.

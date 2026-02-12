@@ -1,0 +1,22 @@
+timm==0.9.10
+tokenizers==0.19.1
+torch>=2.2.0
+torchvision>=0.16.0
+transformers @ git+https://github.com/moojink/transformers-openvla-oft.git  # IMPORTANT: Use this fork for bidirectional attn (for parallel decoding)
+jsonlines
+tensorflow==2.15.0
+tensorflow_datasets==4.9.3
+tensorflow_graphics==2021.12.3
+draccus==0.8.0
+rich
+websockets
+msgpack
+accelerate>=0.25.0
+tyro
+dlimp @ git+https://github.com/moojink/dlimp_openvla
+diffusers==0.30.3
+imageio
+uvicorn
+fastapi
+json-numpy
+wandb
