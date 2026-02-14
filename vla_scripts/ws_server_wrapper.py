@@ -3,7 +3,6 @@ import http
 import logging
 import time
 import traceback
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
@@ -18,7 +17,12 @@ from experiments.robot.openvla_utils import (
     get_processor,
     get_proprio_projector,
 )
-from experiments.robot.robot_utils import get_action, get_model
+from experiments.robot.robot_utils import (
+    get_action,
+    get_model,
+    invert_gripper_action,
+    normalize_gripper_action,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -118,10 +122,10 @@ class OpenVLAWrapper:
         instruction = payload["prompt"]
         observation = {
             "full_image": self.resize_image_for_policy(
-                payload["observation/image"][::-1, ::-1], self.cfg.resize_size
+                payload["observation/image"], self.cfg.resize_size
             ),
             "wrist_image": self.resize_image_for_policy(
-                payload["observation/wrist_image"][::-1, ::-1],
+                payload["observation/wrist_image"],
                 self.cfg.resize_size,
             ),
             "state": payload["observation/state"],
@@ -138,6 +142,10 @@ class OpenVLAWrapper:
             noisy_action_projector=noisy_action_projector,
             use_film=self.cfg.use_film,
         )  # hidden_states has shape (1, chunk_len, 4096)
+
+        actions = np.asarray(actions)
+        actions = normalize_gripper_action(actions, binarize=True)
+        actions = invert_gripper_action(actions)
 
         hidden_states = (
             hidden_states.detach().to(dtype=torch.float16).cpu().numpy()

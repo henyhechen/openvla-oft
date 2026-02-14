@@ -82,7 +82,7 @@ class LiberoOpenVLACfg:
     seed: int = 7  # Random Seed (for reproducibility)
 
     host: str = "0.0.0.0"
-    port: int = 8001
+    port: int = 8000
 
 
 def main(server_cfg: LiberoOpenVLACfg) -> None:

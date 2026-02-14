@@ -17,9 +17,9 @@ from typing import Optional, Union
 import draccus
 import numpy as np
 import tqdm
-from libero.libero import benchmark
-
 import wandb
+
+from libero.libero import benchmark
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
@@ -133,15 +133,23 @@ class GenerateConfig:
 
 def validate_config(cfg: GenerateConfig) -> None:
     """Validate configuration parameters."""
-    assert cfg.pretrained_checkpoint is not None, "pretrained_checkpoint must not be None!"
+    assert (
+        cfg.pretrained_checkpoint is not None
+    ), "pretrained_checkpoint must not be None!"
 
     if "image_aug" in str(cfg.pretrained_checkpoint):
-        assert cfg.center_crop, "Expecting `center_crop==True` because model was trained with image augmentations!"
+        assert (
+            cfg.center_crop
+        ), "Expecting `center_crop==True` because model was trained with image augmentations!"
 
-    assert not (cfg.load_in_8bit and cfg.load_in_4bit), "Cannot use both 8-bit and 4-bit quantization!"
+    assert not (
+        cfg.load_in_8bit and cfg.load_in_4bit
+    ), "Cannot use both 8-bit and 4-bit quantization!"
 
     # Validate task suite
-    assert cfg.task_suite_name in [suite.value for suite in TaskSuite], f"Invalid task suite: {cfg.task_suite_name}"
+    assert cfg.task_suite_name in [
+        suite.value for suite in TaskSuite
+    ], f"Invalid task suite: {cfg.task_suite_name}"
 
 
 def initialize_model(cfg: GenerateConfig):
@@ -174,7 +182,13 @@ def initialize_model(cfg: GenerateConfig):
         processor = get_processor(cfg)
         check_unnorm_key(cfg, model)
 
-    return model, action_head, proprio_projector, noisy_action_projector, processor
+    return (
+        model,
+        action_head,
+        proprio_projector,
+        noisy_action_projector,
+        processor,
+    )
 
 
 def check_unnorm_key(cfg: GenerateConfig, model) -> None:
@@ -184,10 +198,15 @@ def check_unnorm_key(cfg: GenerateConfig, model) -> None:
 
     # In some cases, the key must be manually modified (e.g. after training on a modified version of the dataset
     # with the suffix "_no_noops" in the dataset name)
-    if unnorm_key not in model.norm_stats and f"{unnorm_key}_no_noops" in model.norm_stats:
+    if (
+        unnorm_key not in model.norm_stats
+        and f"{unnorm_key}_no_noops" in model.norm_stats
+    ):
         unnorm_key = f"{unnorm_key}_no_noops"
 
-    assert unnorm_key in model.norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
+    assert (
+        unnorm_key in model.norm_stats
+    ), f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
 
     # Set the unnorm_key in cfg
     cfg.unnorm_key = unnorm_key
@@ -225,7 +244,9 @@ def log_message(message: str, log_file=None):
         log_file.flush()
 
 
-def load_initial_states(cfg: GenerateConfig, task_suite, task_id: int, log_file=None):
+def load_initial_states(
+    cfg: GenerateConfig, task_suite, task_id: int, log_file=None
+):
     """Load initial states for the given task."""
     # Get default initial states
     initial_states = task_suite.get_task_init_states(task_id)
@@ -234,7 +255,9 @@ def load_initial_states(cfg: GenerateConfig, task_suite, task_id: int, log_file=
     if cfg.initial_states_path != "DEFAULT":
         with open(cfg.initial_states_path, "r") as f:
             all_initial_states = json.load(f)
-        log_message(f"Using initial states from {cfg.initial_states_path}", log_file)
+        log_message(
+            f"Using initial states from {cfg.initial_states_path}", log_file
+        )
         return initial_states, all_initial_states
     else:
         log_message("Using default initial states", log_file)
@@ -256,11 +279,18 @@ def prepare_observation(obs, resize_size):
         "full_image": img_resized,
         "wrist_image": wrist_img_resized,
         "state": np.concatenate(
-            (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
+            (
+                obs["robot0_eef_pos"],
+                quat2axisangle(obs["robot0_eef_quat"]),
+                obs["robot0_gripper_qpos"],
+            )
         ),
     }
 
-    return observation, img  # Return both processed observation and original image for replay
+    return (
+        observation,
+        img,
+    )  # Return both processed observation and original image for replay
 
 
 def process_action(action, model_family):
@@ -301,9 +331,11 @@ def run_episode(
 
     # Initialize action queue
     if cfg.num_open_loop_steps != NUM_ACTIONS_CHUNK:
-        print(f"WARNING: cfg.num_open_loop_steps ({cfg.num_open_loop_steps}) does not match the NUM_ACTIONS_CHUNK "
-              f"({NUM_ACTIONS_CHUNK}) constant defined in prismatic.vla.constants! For best performance (in terms of "
-               "both speed and success rate), we recommend executing the full action chunk.")
+        print(
+            f"WARNING: cfg.num_open_loop_steps ({cfg.num_open_loop_steps}) does not match the NUM_ACTIONS_CHUNK "
+            f"({NUM_ACTIONS_CHUNK}) constant defined in prismatic.vla.constants! For best performance (in terms of "
+            "both speed and success rate), we recommend executing the full action chunk."
+        )
     action_queue = deque(maxlen=cfg.num_open_loop_steps)
 
     # Setup
@@ -317,7 +349,9 @@ def run_episode(
         while t < max_steps + cfg.num_steps_wait:
             # Do nothing for the first few timesteps to let objects stabilize
             if t < cfg.num_steps_wait:
-                obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
+                obs, reward, done, info = env.step(
+                    get_libero_dummy_action(cfg.model_family)
+                )
                 t += 1
                 continue
 
@@ -328,7 +362,7 @@ def run_episode(
             # If action queue is empty, requery model
             if len(action_queue) == 0:
                 # Query model to get action
-                actions = get_action(
+                actions, _ = get_action(
                     cfg,
                     model,
                     observation,
@@ -379,10 +413,14 @@ def run_task(
     task = task_suite.get_task(task_id)
 
     # Get initial states
-    initial_states, all_initial_states = load_initial_states(cfg, task_suite, task_id, log_file)
+    initial_states, all_initial_states = load_initial_states(
+        cfg, task_suite, task_id, log_file
+    )
 
     # Initialize environment and get task description
-    env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
+    env, task_description = get_libero_env(
+        task, cfg.model_family, resolution=cfg.env_img_res
+    )
 
     # Start episodes
     task_episodes, task_successes = 0, 0
@@ -399,12 +437,21 @@ def run_task(
             episode_key = f"demo_{episode_idx}"
 
             # Skip episode if expert demonstration failed to complete the task
-            if not all_initial_states[initial_states_task_key][episode_key]["success"]:
-                log_message(f"Skipping task {task_id} episode {episode_idx} due to failed expert demo!", log_file)
+            if not all_initial_states[initial_states_task_key][episode_key][
+                "success"
+            ]:
+                log_message(
+                    f"Skipping task {task_id} episode {episode_idx} due to failed expert demo!",
+                    log_file,
+                )
                 continue
 
             # Get initial state
-            initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
+            initial_state = np.array(
+                all_initial_states[initial_states_task_key][episode_key][
+                    "initial_state"
+                ]
+            )
 
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
 
@@ -432,17 +479,30 @@ def run_task(
 
         # Save replay video
         save_rollout_video(
-            replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
+            replay_images,
+            total_episodes,
+            success=success,
+            task_description=task_description,
+            log_file=log_file,
         )
 
         # Log results
         log_message(f"Success: {success}", log_file)
         log_message(f"# episodes completed so far: {total_episodes}", log_file)
-        log_message(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)", log_file)
+        log_message(
+            f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)",
+            log_file,
+        )
 
     # Log task results
-    task_success_rate = float(task_successes) / float(task_episodes) if task_episodes > 0 else 0
-    total_success_rate = float(total_successes) / float(total_episodes) if total_episodes > 0 else 0
+    task_success_rate = (
+        float(task_successes) / float(task_episodes) if task_episodes > 0 else 0
+    )
+    total_success_rate = (
+        float(total_successes) / float(total_episodes)
+        if total_episodes > 0
+        else 0
+    )
 
     log_message(f"Current task success rate: {task_success_rate}", log_file)
     log_message(f"Current total success rate: {total_success_rate}", log_file)
@@ -469,7 +529,9 @@ def eval_libero(cfg: GenerateConfig) -> float:
     set_seed_everywhere(cfg.seed)
 
     # Initialize model and components
-    model, action_head, proprio_projector, noisy_action_projector, processor = initialize_model(cfg)
+    model, action_head, proprio_projector, noisy_action_projector, processor = (
+        initialize_model(cfg)
+    )
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
@@ -503,13 +565,20 @@ def eval_libero(cfg: GenerateConfig) -> float:
         )
 
     # Calculate final success rate
-    final_success_rate = float(total_successes) / float(total_episodes) if total_episodes > 0 else 0
+    final_success_rate = (
+        float(total_successes) / float(total_episodes)
+        if total_episodes > 0
+        else 0
+    )
 
     # Log final results
     log_message("Final results:", log_file)
     log_message(f"Total episodes: {total_episodes}", log_file)
     log_message(f"Total successes: {total_successes}", log_file)
-    log_message(f"Overall success rate: {final_success_rate:.4f} ({final_success_rate * 100:.1f}%)", log_file)
+    log_message(
+        f"Overall success rate: {final_success_rate:.4f} ({final_success_rate * 100:.1f}%)",
+        log_file,
+    )
 
     # Log to wandb if enabled
     if cfg.use_wandb:
