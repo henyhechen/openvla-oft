@@ -56,7 +56,7 @@ OPENVLA_IMAGE_SIZE = 224  # Standard image size expected by OpenVLA
 np.set_printoptions(formatter={"float": lambda x: "{0:0.3f}".format(x)})
 
 
-def model_is_on_hf_hub(model_path: str, retry_limit: int = 10) -> bool:
+def model_is_on_hf_hub(model_path: str, retry_limit: int = 60) -> bool:
     """Checks whether a model path points to a model on Hugging Face Hub."""
     # If the API call below runs without error, the model is on the hub
     num_retry = 0
