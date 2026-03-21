@@ -8,9 +8,10 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import tensorflow as tf
 import torch
-import vla_scripts.msgpack_numpy as msgpack_numpy
 import websockets.asyncio.server as _server
 import websockets.frames
+
+import vla_scripts.msgpack_numpy as msgpack_numpy
 from experiments.robot.openvla_utils import (
     get_action_head,
     get_noisy_action_projector,
@@ -129,7 +130,6 @@ class OpenVLAWrapper:
                 self.cfg.resize_size,
             ),
             "state": payload["observation/state"],
-            "proprio": payload["observation/proprio"],
         }
 
         actions, hidden_states = get_action(

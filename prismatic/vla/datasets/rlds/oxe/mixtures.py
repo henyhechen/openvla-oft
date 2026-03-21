@@ -197,6 +197,9 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     "libero_spatial_no_noops": [
         ("libero_spatial_no_noops", 1.0),
     ],
+    "libero_rlds_builder": [
+        ("libero_rlds_builder", 1.0),
+    ],
     "libero_object_no_noops": [
         ("libero_object_no_noops", 1.0),
     ],

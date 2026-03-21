@@ -56,7 +56,7 @@ OPENVLA_IMAGE_SIZE = 224  # Standard image size expected by OpenVLA
 np.set_printoptions(formatter={"float": lambda x: "{0:0.3f}".format(x)})
 
 
-def model_is_on_hf_hub(model_path: str, retry_limit: int = 60) -> bool:
+def model_is_on_hf_hub(model_path: str, retry_limit: int = 1) -> bool:
     """Checks whether a model path points to a model on Hugging Face Hub."""
     # If the API call below runs without error, the model is on the hub
     num_retry = 0
@@ -472,7 +472,7 @@ def get_proprio_projector(
     proprio_projector.eval()
 
     # Find and load checkpoint (may be on Hugging Face Hub or stored locally)
-    if model_is_on_hf_hub(cfg.pretrained_checkpoint):
+    if model_is_on_hf_hub(cfg.pretrained_checkpoint, retry_limit=60):
         model_path_to_proprio_projector_name = {
             "moojink/openvla-7b-oft-finetuned-libero-spatial": (
                 "proprio_projector--150000_checkpoint.pt"
@@ -589,7 +589,7 @@ def get_action_head(
     action_head.eval()
 
     # Find and load checkpoint (may be on Hugging Face Hub or stored locally)
-    if model_is_on_hf_hub(cfg.pretrained_checkpoint):
+    if model_is_on_hf_hub(cfg.pretrained_checkpoint, retry_limit=60):
         model_path_to_action_head_name = {
             "moojink/openvla-7b-oft-finetuned-libero-spatial": (
                 "action_head--150000_checkpoint.pt"
