@@ -154,3 +154,5 @@ wandb/
 
 *logs*
 uv.lock
+
+checkpoints/

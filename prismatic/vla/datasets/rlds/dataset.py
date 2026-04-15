@@ -15,6 +15,9 @@ import numpy as np
 import tensorflow as tf
 
 tf.data.experimental.enable_debug_mode()
+import tensorflow_datasets as tfds
+from tensorflow_datasets.core import DatasetNotFoundError
+
 from prismatic.overwatch import initialize_overwatch
 from prismatic.vla.constants import (
     ACTION_DIM,
@@ -34,9 +37,6 @@ from prismatic.vla.datasets.rlds.utils.data_utils import (
     pprint_data_mixture,
     tree_map,
 )
-from tensorflow_datasets.core import DatasetNotFoundError
-
-import tensorflow_datasets as tfds
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
@@ -675,5 +675,4 @@ def make_interleaved_dataset(
     # Save for Later
     dataset.sample_weights = sample_weights
 
-    return dataset, dataset_len, all_dataset_statistics
     return dataset, dataset_len, all_dataset_statistics

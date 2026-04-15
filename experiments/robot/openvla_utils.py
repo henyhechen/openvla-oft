@@ -26,6 +26,8 @@ from transformers import (
 # Apply JSON numpy patch for serialization
 json_numpy.patch()
 
+from pathlib import Path
+
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import (
@@ -56,18 +58,12 @@ OPENVLA_IMAGE_SIZE = 224  # Standard image size expected by OpenVLA
 np.set_printoptions(formatter={"float": lambda x: "{0:0.3f}".format(x)})
 
 
-def model_is_on_hf_hub(model_path: str, retry_limit: int = 1) -> bool:
+def model_is_on_hf_hub(model_path: str) -> bool:
     """Checks whether a model path points to a model on Hugging Face Hub."""
-    # If the API call below runs without error, the model is on the hub
-    num_retry = 0
-    while num_retry < retry_limit:
-        try:
-            HfApi().model_info(model_path)
-            return True
-        except Exception:
-            num_retry += 1
-            time.sleep(1)
-    return False
+    # This checks whether model_path points to an existing path on OS instead
+    # of checking on Hugging Face Hub. We do this because the Hugging Face Hub
+    # check fails occasionally due to internet issues.
+    return not Path(model_path).exists()
 
 
 def update_auto_map(pretrained_checkpoint: str) -> None:
@@ -472,7 +468,7 @@ def get_proprio_projector(
     proprio_projector.eval()
 
     # Find and load checkpoint (may be on Hugging Face Hub or stored locally)
-    if model_is_on_hf_hub(cfg.pretrained_checkpoint, retry_limit=60):
+    if model_is_on_hf_hub(cfg.pretrained_checkpoint):
         model_path_to_proprio_projector_name = {
             "moojink/openvla-7b-oft-finetuned-libero-spatial": (
                 "proprio_projector--150000_checkpoint.pt"
@@ -589,7 +585,7 @@ def get_action_head(
     action_head.eval()
 
     # Find and load checkpoint (may be on Hugging Face Hub or stored locally)
-    if model_is_on_hf_hub(cfg.pretrained_checkpoint, retry_limit=60):
+    if model_is_on_hf_hub(cfg.pretrained_checkpoint):
         model_path_to_action_head_name = {
             "moojink/openvla-7b-oft-finetuned-libero-spatial": (
                 "action_head--150000_checkpoint.pt"
