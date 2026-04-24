@@ -1029,7 +1029,9 @@ def finetune(cfg: FinetuneConfig) -> None:
     }
 
     # Start training
-    with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
+    start_steps = 0 if not cfg.resume else cfg.resume_step
+    assert start_steps is not None
+    with tqdm.tqdm(initial=start_steps, total=cfg.max_steps, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
         for batch_idx, batch in enumerate(dataloader):
